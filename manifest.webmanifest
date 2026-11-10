@@ -1,9 +1,14 @@
 {
+  "id": "harness",
   "name": "HARNESS Autonomous Agent Console",
   "short_name": "HARNESS",
+  "description": "A browser-based AI agent console with chat, Python sandbox, and tools.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a"
+  "theme_color": "#0a0a0a",
+  "icons": [
+    { "src": "./icons/harness.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
 }

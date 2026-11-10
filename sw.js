@@ -1,11 +1,12 @@
-const CACHE_VERSION = 'harness-v2';
+const CACHE_VERSION = 'harness-v3';
 const CORE = [
   './',
   './index.html',
   './manifest.webmanifest',
   './src/main.js',
   './src/styles/tokens.css',
-  './src/styles/app.css'
+  './src/styles/app.css',
+  './icons/harness.svg'
 ];
 
 self.addEventListener('install', event => {
@@ -28,9 +29,9 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        if (response.ok) {
+        if (response.ok && event.request.method === 'GET') {
           const copy = response.clone();
-          caches.open(CACHE_VERSION).then(cache => cache.put(event.request, copy));
+          caches.open(CACHE_VERSION).then(cache => cache.put(event.request, copy)).catch(() => {});
         }
         return response;
       })

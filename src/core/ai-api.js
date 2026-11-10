@@ -13,7 +13,8 @@ Always think step-by-step. Use tools when needed. Return errors gracefully.`;
 const providers = {
   openai: async (messages, tools) => {
     const apiKey = await getSetting('openai_api_key', '');
-    if (!apiKey) throw new Error('OpenAI API key not set.');
+    if (!apiKey) throw new Error('OpenAI API key is missing. Open Settings and add your API key.');
+    const model = await getSetting('openai_model', 'gpt-4o-mini');
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -22,14 +23,22 @@ const providers = {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         messages,
         tools: tools.length > 0 ? tools : undefined,
         stream: true
       })
     });
 
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const body = await response.json();
+        detail = body.error?.message || '';
+      } catch { /* use HTTP status if response isn't JSON */ }
+      throw new Error(`OpenAI API error (${response.status})${detail ? `: ${detail}` : ''}`);
+    }
+    if (!response.body) throw new Error('OpenAI returned an empty response stream.');
     return response.body;
   }
 };
@@ -42,75 +51,74 @@ export async function streamChat(userMessage, onChunk, onToolCall) {
 
   let continueLoop = true;
   let finalText = '';
+  let toolRounds = 0;
 
   while (continueLoop) {
-    const enabledTools = getEnabledTools().map(t => ({ type: 'function', function: t }));
+    if (toolRounds > 8) throw new Error('Stopped after 8 tool rounds to prevent an endless tool-call loop.');
+    const enabledTools = getEnabledTools().map(tool => ({ type: 'function', function: tool }));
     const stream = await providers.openai(messages, enabledTools);
 
     const reader = stream.getReader();
     const decoder = new TextDecoder();
-    let currentToolCalls = [];
-    let assistantMessage = { role: 'assistant', content: '', tool_calls: [] };
+    let buffer = '';
+    const currentToolCalls = [];
+    const assistantMessage = { role: 'assistant', content: '', tool_calls: [] };
 
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter(line => line.trim().startsWith('data: '));
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line.startsWith('data:')) continue;
+          const jsonStr = line.slice(5).trim();
+          if (!jsonStr || jsonStr === '[DONE]') continue;
 
-        for (const line of lines) {
-          const jsonStr = line.replace('data: ', '').trim();
-          if (jsonStr === '[DONE]') continue;
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const delta = parsed.choices[0]?.delta;
-
-            if (delta?.content) {
-              assistantMessage.content += delta.content;
-              finalText += delta.content;
-              onChunk(delta.content);
+          let parsed;
+          try { parsed = JSON.parse(jsonStr); } catch { continue; }
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta?.content) {
+            assistantMessage.content += delta.content;
+            finalText += delta.content;
+            onChunk(delta.content);
+          }
+          for (const call of delta?.tool_calls || []) {
+            const index = call.index ?? 0;
+            if (!currentToolCalls[index]) {
+              currentToolCalls[index] = { id: call.id || '', type: call.type || 'function', function: { name: '', arguments: '' } };
             }
-
-            if (delta?.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                if (!currentToolCalls[tc.index]) currentToolCalls[tc.index] = { id: tc.id, type: tc.type, function: { name: '', arguments: '' } };
-                if (tc.function?.name) currentToolCalls[tc.index].function.name += tc.function.name;
-                if (tc.function?.arguments) currentToolCalls[tc.index].function.arguments += tc.function.arguments;
-              }
-            }
-          } catch (e) { /* ignore parse errors in stream */ }
+            if (call.id) currentToolCalls[index].id = call.id;
+            if (call.function?.name) currentToolCalls[index].function.name += call.function.name;
+            if (call.function?.arguments) currentToolCalls[index].function.arguments += call.function.arguments;
+          }
         }
       }
-    } catch (err) {
-      onChunk(`\n[ERROR: Stream failed - ${err.message}]`);
-      break;
+      buffer += decoder.decode();
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw new Error(`Chat stream failed: ${error.message || error}`);
     }
 
-    if (currentToolCalls.length > 0) {
-      assistantMessage.tool_calls = currentToolCalls.map(tc => ({
-        ...tc,
-        function: { ...tc.function, arguments: JSON.parse(tc.function.arguments || '{}') }
+    const calls = currentToolCalls.filter(Boolean);
+    if (calls.length) {
+      toolRounds += 1;
+      assistantMessage.tool_calls = calls.map(call => ({
+        ...call,
+        function: { ...call.function, arguments: JSON.parse(call.function.arguments || '{}') }
       }));
       messages.push(assistantMessage);
 
-      for (const tc of assistantMessage.tool_calls) {
-        onToolCall(`Executing: ${tc.function.name}...`);
+      for (const call of assistantMessage.tool_calls) {
+        onToolCall(`Executing: ${call.function.name}...`);
         try {
-          const result = await executeTool(tc.function.name, tc.function.arguments);
-          messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: JSON.stringify(result)
-          });
-        } catch (err) {
-          messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: `Tool execution failed: ${err.message}`
-          });
+          const result = await executeTool(call.function.name, call.function.arguments);
+          messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+        } catch (error) {
+          messages.push({ role: 'tool', tool_call_id: call.id, content: `Tool execution failed: ${error.message}` });
         }
       }
     } else {
