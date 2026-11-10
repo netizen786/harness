@@ -12,8 +12,8 @@
   { "imports": { "harness/": "./src/", "pyodide/": "https://cdn.jsdelivr.net/pyodide/v0.28.0/full/" } }
   </script>
   <script>
-    // Keep a visible diagnostic in place if the module graph fails or the app
-    // never actually mounts. Registering <x-app> alone is not proof of success.
+    // Capture boot errors in ordinary HTML so even a failed module graph can
+    // report the actual rejected import rather than leaving a loading skeleton.
     (() => {
       let reported = false;
       let watchdog;
@@ -47,8 +47,6 @@
         heading.textContent = 'HARNESS could not start';
         const summary = document.createElement('p');
         summary.textContent = error || 'The app failed before its interface mounted.';
-        const advice = document.createElement('p');
-        advice.textContent = 'Check the browser console and Network tab for the first failed JavaScript module or request. If this is a deployed site, confirm the latest deployment finished, then reload with cache disabled.';
         panel.append(heading, summary);
 
         if (details) {
@@ -57,6 +55,9 @@
           detail.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:30vh;overflow:auto;padding:12px;background:#0a0a0a;border-radius:6px';
           panel.append(detail);
         }
+
+        const advice = document.createElement('p');
+        advice.textContent = 'The message above is the startup failure. Check the browser Network tab for a missing module or failed request. If deployed with GitHub Pages, verify the latest deployment completed and reload with cache disabled.';
         panel.append(advice);
 
         const actions = document.createElement('div');
@@ -69,9 +70,8 @@
         copy.type = 'button';
         copy.textContent = 'Copy error details';
         copy.addEventListener('click', async () => {
-          const text = [error, details].filter(Boolean).join('\n\n');
           try {
-            await navigator.clipboard.writeText(text);
+            await navigator.clipboard.writeText([error, details].filter(Boolean).join('\n\n'));
             copy.textContent = 'Copied';
           } catch {
             copy.textContent = 'Clipboard unavailable';
@@ -85,6 +85,8 @@
         if (app) app.hidden = true;
         console.error('[HARNESS startup]', error, details);
       }
+
+      window.__HARNESS_SHOW_STARTUP_ERROR__ = showStartupError;
 
       window.addEventListener('error', event => {
         if (isMounted()) return;
@@ -100,19 +102,10 @@
         showStartupError(reason?.message || String(reason || 'App startup failed.'), reason?.stack || 'Unhandled promise rejection during startup.');
       });
 
-      // Watch the actual visibility transition, rather than only custom-element
-      // registration, which can happen before the app is mounted successfully.
-      const observer = new MutationObserver(() => {
-        if (isMounted()) {
-          window.clearTimeout(watchdog);
-          observer.disconnect();
-        }
-      });
       document.addEventListener('DOMContentLoaded', () => {
-        observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
         watchdog = window.setTimeout(() => {
           if (!isMounted()) {
-            showStartupError('The app did not mount within 15 seconds. A JavaScript module may have failed to load or startup may be stuck.', 'No successful app mount was detected before the startup watchdog expired.');
+            showStartupError('The app did not mount within 15 seconds. Startup may be stuck or a JavaScript module may have failed to load.', 'No successful app mount was detected before the startup watchdog expired.');
           }
         }, 15000);
       }, { once: true });
@@ -129,6 +122,15 @@
   <div id="sw-update-toast" class="toast hidden">
     <span>Update available. <button id="sw-reload-btn">Refresh</button></span>
   </div>
-  <script type="module" src="./src/main.js"></script>
+  <script>
+    // Dynamic import gives us a rejection we can display, including failures in
+    // any nested import, instead of relying on the browser's generic module error.
+    import('./src/main.js').catch(error => {
+      window.__HARNESS_SHOW_STARTUP_ERROR__(
+        error?.message || String(error),
+        error?.stack || 'Failed to import ./src/main.js or one of its dependencies.'
+      );
+    });
+  </script>
 </body>
 </html>
