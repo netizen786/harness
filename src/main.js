@@ -1,8 +1,7 @@
-import { FEATURES } from './flags.js';
-import { bus } from './bus.js';
-import { initStore } from './store.js';
-import { initRegistry } from './registry.js';
-import { initPyodideRunner } from './pyodide-runner.js';
+import { bus } from './core/bus.js';
+import { initStore } from './core/store.js';
+import { initRegistry } from './core/registry.js';
+import { initPyodideRunner } from './core/pyodide-runner.js';
 import './ui/app-shell.js';
 
 async function bootstrap() {
