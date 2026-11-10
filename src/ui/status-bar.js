@@ -6,13 +6,22 @@ export class StatusBar extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+    this.updateStatus = () => this.render();
   }
 
   connectedCallback() {
     this.render();
-    bus.on('pyodide:ready', () => this.render());
-    window.addEventListener('online', () => this.render());
-    window.addEventListener('offline', () => this.render());
+    bus.on('pyodide:ready', this.updateStatus);
+    bus.on('pyodide:error', this.updateStatus);
+    window.addEventListener('online', this.updateStatus);
+    window.addEventListener('offline', this.updateStatus);
+  }
+
+  disconnectedCallback() {
+    bus.off('pyodide:ready', this.updateStatus);
+    bus.off('pyodide:error', this.updateStatus);
+    window.removeEventListener('online', this.updateStatus);
+    window.removeEventListener('offline', this.updateStatus);
   }
 
   render() {
