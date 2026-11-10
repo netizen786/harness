@@ -11,6 +11,54 @@
   <script type="importmap">
   { "imports": { "harness/": "./src/", "pyodide/": "https://cdn.jsdelivr.net/pyodide/v0.28.0/full/" } }
   </script>
+  <script>
+    // A module import or network failure can stop src/main.js before it gets a
+    // chance to hide the skeleton. Surface that failure instead of spinning forever.
+    (() => {
+      let reported = false;
+      function showStartupError(error) {
+        if (reported) return;
+        reported = true;
+
+        const skeleton = document.getElementById('app-skeleton');
+        if (!skeleton) return;
+        skeleton.replaceChildren();
+        skeleton.style.color = 'var(--color-text)';
+        skeleton.style.justifyContent = 'center';
+        skeleton.style.fontFamily = 'var(--font-sans)';
+
+        const heading = document.createElement('h2');
+        heading.textContent = 'HARNESS could not start';
+        const detail = document.createElement('p');
+        detail.textContent = error || 'The app entry module did not finish loading. Check the browser console and network requests.';
+        const refresh = document.createElement('button');
+        refresh.type = 'button';
+        refresh.textContent = 'Reload app';
+        refresh.addEventListener('click', () => window.location.reload());
+
+        skeleton.append(heading, detail, refresh);
+        skeleton.hidden = false;
+        const app = document.getElementById('app-root');
+        if (app) app.hidden = true;
+      }
+
+      window.addEventListener('error', event => {
+        if (event.target instanceof HTMLScriptElement || event.target === window) {
+          showStartupError(event.message || `Failed to load ${event.target?.src || 'the app script'}`);
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', event => {
+        showStartupError(event.reason?.message || String(event.reason || 'App startup failed.'));
+      });
+
+      // Also handle a missing or stalled entry module that emits no useful event.
+      window.setTimeout(() => {
+        if (!customElements.get('x-app')) {
+          showStartupError('The app entry module did not register the interface. Check the browser console and network requests.');
+        }
+      }, 20000);
+    })();
+  </script>
 </head>
 <body>
   <div id="app-skeleton" class="skeleton-container">
