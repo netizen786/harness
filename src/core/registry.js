@@ -1,4 +1,4 @@
-import { FEATURES } from './flags.js';
+import { FEATURES, isFeatureEnabled } from './flags.js';
 import { runPython } from './pyodide-runner.js';
 import { searchWeb } from './search-api.js';
 import { fsRead, fsWrite, fsList } from './virtual-fs.js';
@@ -79,7 +79,6 @@ export function initRegistry() {
     enabledByFlag: null
   });
 
-  // STUBS
   registerTool({
     name: 'browse_url',
     description: 'Open and scrape a URL using a remote browser.',

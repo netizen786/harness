@@ -5,7 +5,7 @@ let isReady = false;
 
 export async function initPyodideRunner() {
   worker = new Worker(new URL('../workers/pyodide.worker.js', import.meta.url), { type: 'module' });
-  
+
   return new Promise((resolve, reject) => {
     worker.onmessage = (e) => {
       if (e.data.type === 'READY') {
@@ -23,7 +23,7 @@ export async function initPyodideRunner() {
 
 export async function runPython(code) {
   if (!isReady) throw new Error('Pyodide is not initialized yet.');
-  
+
   return new Promise((resolve) => {
     const msgId = crypto.randomUUID();
     const handler = (e) => {
