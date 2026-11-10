@@ -12,51 +12,110 @@
   { "imports": { "harness/": "./src/", "pyodide/": "https://cdn.jsdelivr.net/pyodide/v0.28.0/full/" } }
   </script>
   <script>
-    // A module import or network failure can stop src/main.js before it gets a
-    // chance to hide the skeleton. Surface that failure instead of spinning forever.
+    // Keep a visible diagnostic in place if the module graph fails or the app
+    // never actually mounts. Registering <x-app> alone is not proof of success.
     (() => {
       let reported = false;
-      function showStartupError(error) {
-        if (reported) return;
+      let watchdog;
+
+      function isMounted() {
+        const app = document.getElementById('app-root');
+        const skeleton = document.getElementById('app-skeleton');
+        return Boolean(app && !app.hidden && skeleton?.hidden);
+      }
+
+      function showStartupError(error, details = '') {
+        if (reported || isMounted()) return;
         reported = true;
+        window.clearTimeout(watchdog);
 
         const skeleton = document.getElementById('app-skeleton');
         if (!skeleton) return;
         skeleton.replaceChildren();
-        skeleton.style.color = 'var(--color-text)';
+        skeleton.style.color = 'var(--color-text, #f5f5f5)';
         skeleton.style.justifyContent = 'center';
-        skeleton.style.fontFamily = 'var(--font-sans)';
+        skeleton.style.alignItems = 'stretch';
+        skeleton.style.fontFamily = 'var(--font-sans, system-ui, sans-serif)';
+        skeleton.style.overflow = 'auto';
+
+        const panel = document.createElement('section');
+        panel.setAttribute('role', 'alert');
+        panel.setAttribute('aria-live', 'assertive');
+        panel.style.cssText = 'max-width:760px;margin:auto;padding:24px;border:1px solid #713b3b;border-radius:12px;background:#171212;display:grid;gap:12px';
 
         const heading = document.createElement('h2');
         heading.textContent = 'HARNESS could not start';
-        const detail = document.createElement('p');
-        detail.textContent = error || 'The app entry module did not finish loading. Check the browser console and network requests.';
+        const summary = document.createElement('p');
+        summary.textContent = error || 'The app failed before its interface mounted.';
+        const advice = document.createElement('p');
+        advice.textContent = 'Check the browser console and Network tab for the first failed JavaScript module or request. If this is a deployed site, confirm the latest deployment finished, then reload with cache disabled.';
+        panel.append(heading, summary);
+
+        if (details) {
+          const detail = document.createElement('pre');
+          detail.textContent = details;
+          detail.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:30vh;overflow:auto;padding:12px;background:#0a0a0a;border-radius:6px';
+          panel.append(detail);
+        }
+        panel.append(advice);
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
         const refresh = document.createElement('button');
         refresh.type = 'button';
         refresh.textContent = 'Reload app';
         refresh.addEventListener('click', () => window.location.reload());
-
-        skeleton.append(heading, detail, refresh);
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.textContent = 'Copy error details';
+        copy.addEventListener('click', async () => {
+          const text = [error, details].filter(Boolean).join('\n\n');
+          try {
+            await navigator.clipboard.writeText(text);
+            copy.textContent = 'Copied';
+          } catch {
+            copy.textContent = 'Clipboard unavailable';
+          }
+        });
+        actions.append(refresh, copy);
+        panel.append(actions);
+        skeleton.append(panel);
         skeleton.hidden = false;
         const app = document.getElementById('app-root');
         if (app) app.hidden = true;
+        console.error('[HARNESS startup]', error, details);
       }
 
       window.addEventListener('error', event => {
+        if (isMounted()) return;
         if (event.target instanceof HTMLScriptElement || event.target === window) {
-          showStartupError(event.message || `Failed to load ${event.target?.src || 'the app script'}`);
+          const location = event.filename ? `${event.filename}:${event.lineno || 0}:${event.colno || 0}` : '';
+          showStartupError(event.message || `Failed to load ${event.target?.src || 'the app script'}`, [location, event.error?.stack].filter(Boolean).join('\n'));
         }
       }, true);
+
       window.addEventListener('unhandledrejection', event => {
-        showStartupError(event.reason?.message || String(event.reason || 'App startup failed.'));
+        if (isMounted()) return;
+        const reason = event.reason;
+        showStartupError(reason?.message || String(reason || 'App startup failed.'), reason?.stack || 'Unhandled promise rejection during startup.');
       });
 
-      // Also handle a missing or stalled entry module that emits no useful event.
-      window.setTimeout(() => {
-        if (!customElements.get('x-app')) {
-          showStartupError('The app entry module did not register the interface. Check the browser console and network requests.');
+      // Watch the actual visibility transition, rather than only custom-element
+      // registration, which can happen before the app is mounted successfully.
+      const observer = new MutationObserver(() => {
+        if (isMounted()) {
+          window.clearTimeout(watchdog);
+          observer.disconnect();
         }
-      }, 20000);
+      });
+      document.addEventListener('DOMContentLoaded', () => {
+        observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+        watchdog = window.setTimeout(() => {
+          if (!isMounted()) {
+            showStartupError('The app did not mount within 15 seconds. A JavaScript module may have failed to load or startup may be stuck.', 'No successful app mount was detected before the startup watchdog expired.');
+          }
+        }, 15000);
+      }, { once: true });
     })();
   </script>
 </head>
