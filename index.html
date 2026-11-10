@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HARNESS</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="stylesheet" href="./src/styles/tokens.css">
+  <link rel="stylesheet" href="./src/styles/app.css">
+  <script type="importmap">
+  { "imports": { "harness/": "./src/", "pyodide/": "https://cdn.jsdelivr.net/pyodide/v0.28.0/full/" } }
+  </script>
+</head>
+<body>
+  <div id="app-skeleton" class="skeleton-container">
+    <div class="skeleton-header"></div>
+    <div class="skeleton-main"><div class="skeleton-panel"></div><div class="skeleton-panel"></div></div>
+    <div class="skeleton-footer"></div>
+  </div>
+  <x-app id="app-root" hidden></x-app>
+  <div id="sw-update-toast" class="toast hidden">
+    <span>Update available. <button id="sw-reload-btn">Refresh</button></span>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
