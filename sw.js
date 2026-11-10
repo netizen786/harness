@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'harness-v1';
+const CACHE_VERSION = 'harness-v2';
 const CORE = [
   './',
   './index.html',
@@ -8,30 +8,32 @@ const CORE = [
   './src/styles/app.css'
 ];
 
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_VERSION).then(c => c.addAll(CORE)));
+self.addEventListener('install', event => {
+  event.waitUntil(caches.open(CACHE_VERSION).then(cache => cache.addAll(CORE)));
   self.skipWaiting();
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE_VERSION).map(x => caches.delete(x)))).then(() => self.clients.claim()));
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE_VERSION).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
 });
 
-self.addEventListener('fetch', e => {
-  const u = new URL(e.request.url);
-  if (u.hostname !== 'localhost' && u.hostname !== self.location.hostname && u.hostname !== '127.0.0.1') {
-    e.respondWith(fetch(e.request).then(r => {
-      const c = r.clone();
-      caches.open(CACHE_VERSION).then(x => x.put(e.request, c));
-      return r;
-    }).catch(() => caches.match(e.request)));
-    return;
-  }
+self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
 
-  e.respondWith(caches.match(e.request).then(c => c || fetch(e.request).then(r => {
-    if (!r || r.status !== 200) return r;
-    const cl = r.clone();
-    caches.open(CACHE_VERSION).then(x => x.put(e.request, cl));
-    return r;
-  })));
+  event.respondWith(
+    fetch(event.request)
+      .then(response => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_VERSION).then(cache => cache.put(event.request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request).then(cached => cached || Response.error()))
+  );
 });
