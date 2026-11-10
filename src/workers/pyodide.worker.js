@@ -12,7 +12,7 @@ self.onmessage = async (event) => {
       });
       self.postMessage({ type: 'READY' });
     } catch (err) {
-      self.postMessage({ type: 'ERROR', error: err.message });
+      self.postMessage({ type: 'ERROR', error: err.message || String(err) });
     }
   }
 
@@ -23,12 +23,10 @@ self.onmessage = async (event) => {
     }
 
     try {
-      // Enforce async execution and block dangerous sync calls via Python wrapper
       const wrappedCode = `
 import asyncio
 import sys
 
-# Block dangerous imports
 _original_import = __builtins__.__import__
 def _safe_import(name, *args, **kwargs):
     if name in ['os', 'subprocess', 'socket', 'threading']:
@@ -44,7 +42,6 @@ async def _run():
         return {"ok": False, "error": str(e), "traceback": str(sys.exc_info())}
     return {"ok": True, "result": "Execution completed successfully"}
 
-# Run the async wrapper
 result = asyncio.run(_run())
 result
 `;
@@ -52,14 +49,14 @@ result
       const jsResult = result.toJs ? result.toJs() : result;
       self.postMessage({ type: 'RESULT', msgId, result: jsResult });
     } catch (err) {
-      if (err.message.includes('ModuleNotFoundError')) {
+      if (String(err.message || err).includes('ModuleNotFoundError')) {
         self.postMessage({
           type: 'RESULT',
           msgId,
-          result: { ok: false, error: `ModuleNotFoundError: ${err.message}. Install it first or use standard library.` }
+          result: { ok: false, error: `ModuleNotFoundError: ${err.message || err}. Install it first or use standard library.` }
         });
       } else {
-        self.postMessage({ type: 'RESULT', msgId, result: { ok: false, error: err.message } });
+        self.postMessage({ type: 'RESULT', msgId, result: { ok: false, error: err.message || String(err) } });
       }
     }
   }
