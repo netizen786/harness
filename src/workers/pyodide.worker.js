@@ -1,4 +1,4 @@
-import { loadPyodide } from 'pyodide/pyodide.js';
+import { loadPyodide } from 'https://cdn.jsdelivr.net/pyodide/v0.28.0/full/pyodide.mjs';
 
 let pyodide = null;
 
@@ -53,10 +53,10 @@ result
       self.postMessage({ type: 'RESULT', msgId, result: jsResult });
     } catch (err) {
       if (err.message.includes('ModuleNotFoundError')) {
-        self.postMessage({ 
-          type: 'RESULT', 
-          msgId, 
-          result: { ok: false, error: `ModuleNotFoundError: ${err.message}. Install it first or use standard library.` } 
+        self.postMessage({
+          type: 'RESULT',
+          msgId,
+          result: { ok: false, error: `ModuleNotFoundError: ${err.message}. Install it first or use standard library.` }
         });
       } else {
         self.postMessage({ type: 'RESULT', msgId, result: { ok: false, error: err.message } });
